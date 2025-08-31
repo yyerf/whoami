@@ -88,8 +88,8 @@ const directorySet = new Set<string>([
   const fileContents: Record<string, string> = {
   '~/about': `This portfolio looks like a Kali terminal because that's where I think, experiment, and (carefully) break things. I like breaking concepts down, solving puzzles, and hiding a few of my own.\nThere's a tiny CTF woven in—wander the filesystem, read files, and see what you can uncover.\nCurrent focus: cybersecurity, automation, AI, and relentless learning.\n`,
     '~/experience': `• CCTV Technician and Administrator\n• Freelancing Projects\n`,
-    '~/contact': `Email: <your email here>\nLinkedIn: linkedin.com/in/yourprofile\nGitHub: github.com/yyerf`,
-    '~/password.txt': `Geof"fr3y"!@yyerf`,
+  '~/contact': `Email: mailto:geoffrey@diapana.dev\nGitHub: https://github.com/yyerf\n`,
+    '~/password.txt': `Geof"fr3y"!@yyerf\nfor the CTF(?)\n`,
     // Inject certification file contents
   ...Object.fromEntries(certificationFiles.map(f => [ `~/certifications/${f.category}/${f.name}`, f.content ])),
     // Inject project file contents
@@ -145,13 +145,14 @@ const directorySet = new Set<string>([
       description: 'Show available commands',
       execute: () => [
   'Available commands:',
-  '  cat <name>   - Show file (about | experience | contact | password.txt | certifications/* | projects/*)',
-        '  cd <dir>     - Change directory (projects | certifications)',
+  '  cat <name>   - Show file ',
+        '  cd <dir>     - Change directory ',
         '  clear        - Clear the terminal',
         '  help         - Show this help message',
         '  ls [path]    - List directory contents',
         '  pwd          - Print current directory',
         '  whoami       - Display user info',
+        ''
       ]
     },
     whoami: {
@@ -160,9 +161,9 @@ const directorySet = new Set<string>([
       execute: () => [
         '__avatar__',
         "Hi, I'm Geoffrey – a 3rd Year Computer Science student.",
-        'Builder by passion, breaker by curiosity.',
+        '"Builder by passion, breaker by curiosity."',
         'Current Focus: Cloud (GCP), Cybersecurity fundamentals, TypeScript, Python + AI tooling.',
-        'Core Skills: React · TypeScript · Python · PowerShell · Networking · Linux · Git · (currently learning Laravel)',
+        'Core Skills: React · TypeScript · Python · Networking · Linux · Git · (currently learning Laravel)',
         'Legacy GitHub Pages: https://diapz.github.io',
         'Current GitHub: https://github.com/yyerf',
         "Type 'help' to see all commands.",
@@ -794,7 +795,7 @@ const directorySet = new Set<string>([
                 if (line.type === 'error') return <span className="terminal-error">{line.content}</span>;
                 // Output with URL highlighting
                 const parts: (string | { url: string })[] = [];
-                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                const urlRegex = /(mailto:[^\s]+|https?:\/\/[^\s]+|github\.com\/[^\s]+)/g;
                 let lastIndex = 0;
                 let m: RegExpExecArray | null;
                 while ((m = urlRegex.exec(line.content)) !== null) {
@@ -805,17 +806,27 @@ const directorySet = new Set<string>([
                 if (lastIndex < line.content.length) parts.push(line.content.slice(lastIndex));
                 return (
                   <span className="terminal-output">
-                    {parts.map((p, i) => typeof p === 'string' ? p : (
-                      <a
-                        key={i}
-                        href={p.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary underline decoration-dotted hover:decoration-solid hover:text-primary/90 transition-colors"
-                      >
-                        {p.url}
-                      </a>
-                    ))}
+                    {parts.map((p, i) => {
+                      if (typeof p === 'string') return p;
+                      let href = p.url;
+                      let label = p.url;
+                      if (href.startsWith('mailto:')) {
+                        label = href.replace(/^mailto:/,'');
+                      } else if (href.startsWith('github.com')) {
+                        href = 'https://' + href;
+                      }
+                      return (
+                        <a
+                          key={i}
+                          href={href}
+                          target={href.startsWith('mailto:') ? '_self' : '_blank'}
+                          rel={href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
+                          className="text-primary underline decoration-dotted hover:decoration-solid hover:text-primary/90 transition-colors"
+                        >
+                          {label}
+                        </a>
+                      );
+                    })}
                   </span>
                 );
               })()}

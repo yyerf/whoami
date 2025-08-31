@@ -20,7 +20,9 @@ const BackgroundAudio: React.FC = () => {
     const el = new Audio('/audio/bg-music.mp3');
     el.loop = true;
     el.preload = 'auto';
-    el.volume = 0.45; // fixed subtle volume
+    el.volume = 0.45; // target volume
+    // Autoplay trick: start muted, then unmute after successful play
+    (el as any).muted = true;
     audioRef.current = el;
     const canplay = () => setReady(true);
     el.addEventListener('canplay', canplay);
@@ -30,22 +32,47 @@ const BackgroundAudio: React.FC = () => {
     };
   }, []);
 
-  // Attempt autoplay on mount & when audio ready
+  // Attempt autoplay (muted) when ready; fallback to user interaction
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !ready) return;
-    if (!playing) {
-      el.pause();
-      return;
-    }
-    el.play().then(() => {
-      setAutoplayBlocked(false);
-    }).catch(() => {
-      // Autoplay blocked (no gesture) — show Play button
-      setAutoplayBlocked(true);
-      setPlaying(false);
-    });
+    if (!playing) { el.pause(); return; }
+
+    const tryPlay = () => {
+      el.play().then(() => {
+        setAutoplayBlocked(false);
+        // Unmute shortly after start so autoplay policies allow it
+        setTimeout(() => { (el as any).muted = false; }, 250);
+      }).catch(() => {
+        setAutoplayBlocked(true);
+        setPlaying(false); // will show Play button
+      });
+    };
+    tryPlay();
   }, [ready, playing]);
+
+  // Add one-time user interaction listeners if autoplay blocked
+  useEffect(() => {
+    if (!autoplayBlocked) return;
+    const handler = () => {
+      const el = audioRef.current;
+      if (!el) return;
+      (el as any).muted = false;
+      el.play().then(() => {
+        setPlaying(true);
+        setAutoplayBlocked(false);
+        try { localStorage.setItem(LS_KEY_PAUSED, '0'); } catch {}
+        window.removeEventListener('pointerdown', handler);
+        window.removeEventListener('keydown', handler);
+      }).catch(() => {});
+    };
+    window.addEventListener('pointerdown', handler, { once: true });
+    window.addEventListener('keydown', handler, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', handler);
+      window.removeEventListener('keydown', handler);
+    };
+  }, [autoplayBlocked]);
 
   const toggle = () => {
     const el = audioRef.current;
