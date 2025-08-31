@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Terminal Design System */
+    --terminal-bg: 0 0% 4%;
+    --terminal-surface: 0 0% 6%;
+    --terminal-border: 0 0% 12%;
+    
+    --terminal-green: 127 100% 66%;
+    --terminal-green-dim: 127 82% 45%;
+    --terminal-blue: 210 100% 70%;
+    --terminal-white: 0 0% 90%;
+    --terminal-gray: 0 0% 60%;
+    --terminal-error: 0 85% 65%;
+    
+    /* Core tokens using terminal colors */
+    --background: var(--terminal-bg);
+    --foreground: var(--terminal-green);
+    --card: var(--terminal-surface);
+    --card-foreground: var(--terminal-white);
+    --primary: var(--terminal-green);
+    --primary-foreground: var(--terminal-bg);
+    --secondary: var(--terminal-surface);
+    --secondary-foreground: var(--terminal-white);
+    --muted: var(--terminal-border);
+    --muted-foreground: var(--terminal-gray);
+    --accent: var(--terminal-blue);
+    --accent-foreground: var(--terminal-bg);
+    --border: var(--terminal-border);
+    --input: var(--terminal-surface);
+    --ring: var(--terminal-green);
+    --destructive: var(--terminal-error);
+    --destructive-foreground: var(--terminal-white);
+    
+    --radius: 0.25rem;
+
+    /* Terminal-specific variables */
+    --terminal-font: 'Open Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --terminal-prompt: var(--terminal-green);
+    --terminal-command: var(--terminal-white);
+    --terminal-output: var(--terminal-gray);
+    --terminal-highlight: var(--terminal-blue);
+    
+    /* Animations */
+    --cursor-blink: blink 1s infinite;
+    --type-speed: 50ms;
+  }
+
+  .dark {
+    /* Terminal theme is inherently dark */
+    --background: var(--terminal-bg);
+    --foreground: var(--terminal-green);
+    --card: var(--terminal-surface);
+    --card-foreground: var(--terminal-white);
+    --primary: var(--terminal-green);
+    --primary-foreground: var(--terminal-bg);
+    --secondary: var(--terminal-surface);
+    --secondary-foreground: var(--terminal-white);
+    --muted: var(--terminal-border);
+    --muted-foreground: var(--terminal-gray);
+    --accent: var(--terminal-blue);
+    --accent-foreground: var(--terminal-bg);
+    --border: var(--terminal-border);
+    --input: var(--terminal-surface);
+    --ring: var(--terminal-green);
+    --destructive: var(--terminal-error);
+    --destructive-foreground: var(--terminal-white);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-mono;
+    font-family: var(--terminal-font);
+  }
+}
+
+@layer components {
+  .terminal-cursor {
+    display: none;
+  }
+  
+  .terminal-line {
+    @apply flex items-start gap-2 min-h-6;
+  }
+  
+  .terminal-prompt {
+    @apply text-primary shrink-0;
+  }
+  
+  .terminal-input {
+    @apply bg-transparent border-none outline-none text-foreground flex-1 font-mono;
+    font-family: var(--terminal-font);
+    caret-color: transparent;
+  }
+
+  .terminal-input.caret-visible {
+    caret-color: hsl(var(--primary));
+  }
+
+  .custom-caret {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px; /* Kali-like thin bar */
+    height: 1.25rem; /* align with input line height */
+    background: hsl(var(--primary));
+    animation: var(--cursor-blink);
+    pointer-events: none;
+  }
+
+  .terminal-input-mirror {
+    position: absolute;
+    visibility: hidden;
+    white-space: pre;
+    @apply font-mono;
+    font-family: var(--terminal-font);
+  }
+  
+  .terminal-output {
+    @apply text-muted-foreground;
+  }
+  
+  .terminal-command {
+    @apply text-card-foreground;
+  }
+  
+  .terminal-highlight {
+    @apply text-accent;
+  }
+  
+  .terminal-error {
+    @apply text-destructive;
+  }
+  
+  .typing-animation {
+    overflow: hidden;
+    white-space: nowrap;
+    animation: typing 2s steps(40, end);
+  }
+
+  /* Smooth appearance for new lines */
+  @keyframes line-enter {
+    0% { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .line-enter {
+    animation: line-enter 0.28s ease-out both;
+  }
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* Celebration */
+@keyframes confetti-fall {
+  0% { transform: translateY(-10%) rotateZ(0deg) rotateX(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(120vh) rotateZ(720deg) rotateX(360deg); opacity: 0; }
+}
+.cf-piece {
+  position: absolute;
+  top: -4%;
+  left: 0;
+  border-radius: 1px;
+  animation: confetti-fall 3.8s cubic-bezier(.55,.09,.68,.53) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: scale(.98);} to { opacity: 1; transform: scale(1);} }
+
+/* Particle background container */
+#tsparticles, #tsparticles-terminal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
