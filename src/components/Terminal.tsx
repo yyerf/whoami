@@ -82,7 +82,7 @@ const directorySet = new Set<string>([
 
   const projectFiles: { name: string; content: string }[] = [
     { name: 'portfolio-terminal.md', content: 'Interactive portfolio terminal + CTF micro puzzle + encryption visualizer.' },
-    { name: 'automation-scripts.md', content: 'Collection of PowerShell & Python scripts for system automation and log parsing.' },
+    { name: 'guilds.md', content: 'GDG On Campus UIC Guilds Platform - https://guilds.gdgocuic.org\nFor the University Club Fair' },
   ];
 
   const fileContents: Record<string, string> = {

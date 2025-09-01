@@ -14,7 +14,6 @@ Interactive portfolio panel featuring a sandboxed terminal puzzle (mini CTF), an
 	- Privilege escalation flow (password challenge)
 	- Hidden file discovery and cipher riddle
 	- Flag submission, timing, persistent best-time tracking
-- Professional completion celebration (confetti + subtle chord)
 - Encryption Visualizer (AES-256 & RSA-OAEP step simulation with timing)
 - 3D/visual components (e.g. Lanyard / panels) using React + Tailwind
 - Accessible, theme-friendly shadcn-ui component layer
@@ -40,7 +39,7 @@ Interactive portfolio panel featuring a sandboxed terminal puzzle (mini CTF), an
 
 ```powershell
 git clone <REPO_URL>
-cd cmd-showcase-portal
+cd whoami
 npm install
 npm run dev
 ```
@@ -79,20 +78,9 @@ public/               Static files served as-is
 
 Simulates major steps of AES-256 and RSA-OAEP with progressive highlighting, approximate durations, and a derived pseudo-cipher for demonstration purposes. It does not perform real cryptographic encryption and should not be used for security decisions.
 
-### Development Notes
-
-- Keep component logic cohesive; avoid monolith files—split when a file exceeds ~300 lines or mixes concerns.
-- Tailwind: prefer composition via utility classes; extract only when repeated 4+ times with identical semantics.
-- Accessibility: ensure interactive elements retain focus styles; aria attributes are encouraged for future expansions.
-
 ### Deployment
 
-The site is a static Vite build and can be deployed to any static host (Vercel, Netlify, GitHub Pages, Cloudflare Pages, S3 + CDN). Example:
-
-```bash
-npm run build
-# Deploy dist/ via your platform's CLI or dashboard
-```
+The site is a static Vite build that is deployed in vercel
 
 ### Security & Privacy
 
