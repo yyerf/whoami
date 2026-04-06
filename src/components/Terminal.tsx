@@ -22,6 +22,7 @@ const Terminal = () => {
   const [currentInput, setCurrentInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('~');
+  const [previousPath, setPreviousPath] = useState<string>('~');
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -139,21 +140,67 @@ const directorySet = new Set<string>([
     return [];
   };
 
+  // Helper: find longest common prefix of an array of strings
+  const commonPrefix = (strings: string[]): string => {
+    if (strings.length === 0) return '';
+    let prefix = strings[0];
+    for (let i = 1; i < strings.length; i++) {
+      while (!strings[i].startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+        if (!prefix) return '';
+      }
+    }
+    return prefix;
+  };
+
   const commands: Record<string, Command> = {
     help: {
       name: 'help',
       description: 'Show available commands',
       execute: () => [
   'Available commands:',
-  '  cat <name>   - Show file ',
-        '  cd <dir>     - Change directory ',
+  '  cat <name>   - Show file contents',
+        '  cd <dir>     - Change directory (supports ~, .., -, tab)',
         '  clear        - Clear the terminal',
+        '  date         - Show current date/time',
+        '  echo <text>  - Print text to terminal',
         '  help         - Show this help message',
-        '  ls [path]    - List directory contents',
+        '  history      - Show command history',
+        '  id           - Display user identity',
+        '  ls [opts]    - List directory (-a, -l, -la)',
         '  pwd          - Print current directory',
+        '  uname [-a]   - Show system information',
         '  whoami       - Display user info',
+        '',
+        'Shortcuts:',
+        '  Tab          - Auto-complete commands & paths',
+        '  Ctrl+C       - Cancel current input',
+        '  Ctrl+L       - Clear screen',
+        '  Ctrl+U       - Clear line',
+        '  ↑/↓          - Browse command history',
         ''
       ]
+    },
+    history: {
+      name: 'history',
+      description: 'Show command history',
+      execute: () => {
+        if (commandHistory.length === 0) return ['No commands in history.', ''];
+        return [
+          ...commandHistory.map((cmd, i) => `  ${String(i + 1).padStart(4)}  ${cmd}`),
+          ''
+        ];
+      }
+    },
+    date: {
+      name: 'date',
+      description: 'Show current date/time',
+      execute: () => [new Date().toString(), '']
+    },
+    id: {
+      name: 'id',
+      description: 'Display user identity',
+      execute: () => ['uid=1000(yyerf) gid=1000(yyerf) groups=1000(yyerf),27(sudo)', '']
     },
     whoami: {
       name: 'whoami',
@@ -288,18 +335,32 @@ const directorySet = new Set<string>([
     // Built-in cd handling
     if (trimmedInput === 'cd') {
       const target = args.join(' ');
-      const next = resolvePath(currentPath, target);
+      // cd - : go to previous directory
+      let resolvedTarget = target;
+      if (target === '-') {
+        resolvedTarget = previousPath;
+      }
+      const next = resolvePath(currentPath, resolvedTarget);
       if (next === currentPath) {
-        // If attempt to cd into invalid dir, show error
-        if (target && target !== '.' && target !== '~') {
+        if (target === '-') {
+          // cd - to same dir is fine, just print path
+          const infoLine: TerminalLine = { id: `cd-dash-${Date.now()}`, type: 'output', content: currentPath, timestamp: new Date(), animate: true };
+          setLines(prev => [...prev, promptTop, promptBottom, infoLine]);
+        } else if (target && target !== '.' && target !== '~') {
           const err = `bash: cd: ${target}: No such file or directory`;
           setLines(prev => [...prev, promptTop, promptBottom, { id: `err-${Date.now()}`, type: 'error', content: err, timestamp: new Date() }]);
         } else {
           setLines(prev => [...prev, promptTop, promptBottom]);
         }
       } else {
+        setPreviousPath(currentPath);
         setCurrentPath(next);
-        setLines(prev => [...prev, promptTop, promptBottom]);
+        if (target === '-') {
+          const infoLine: TerminalLine = { id: `cd-dash-${Date.now()}`, type: 'output', content: next, timestamp: new Date(), animate: true };
+          setLines(prev => [...prev, promptTop, promptBottom, infoLine]);
+        } else {
+          setLines(prev => [...prev, promptTop, promptBottom]);
+        }
       }
     } else if (trimmedInput === 'pwd') {
       const outputLines: TerminalLine[] = [
@@ -307,16 +368,73 @@ const directorySet = new Set<string>([
       ];
       setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
     } else if (trimmedInput === 'ls') {
-      const targetArg = args.join(' ');
-      const targetPath = targetArg ? resolvePath(currentPath, targetArg) : currentPath; // no arg -> current directory
+      // Parse flags and path argument
+      const flags = new Set<string>();
+      let targetArg = '';
+      for (const arg of args) {
+        if (arg.startsWith('-') && arg.length > 1) {
+          for (const ch of arg.slice(1)) flags.add(ch);
+        } else {
+          targetArg = targetArg ? targetArg + ' ' + arg : arg;
+        }
+      }
+      const targetPath = targetArg ? resolvePath(currentPath, targetArg) : currentPath;
       const normalized = normalizePath(targetPath);
-      const entries = listDirectory(normalized);
-      const encoded = entries.map(e => `${e.name}|${e.kind}`).join(' ');
-      const marker = '__ls__:' + encoded;
-      const outputLines: TerminalLine[] = entries.length ? [
-        { id: `ls-${Date.now()}`, type: 'output' as const, content: marker, timestamp: new Date(), animate: true }
-      ] : [];
-      setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
+      if (!directorySet.has(normalized)) {
+        const err = `ls: cannot access '${targetArg}': No such file or directory`;
+        setLines(prev => [...prev, promptTop, promptBottom, { id: `err-${Date.now()}`, type: 'error', content: err, timestamp: new Date(), animate: true }]);
+      } else {
+        let entries = listDirectory(normalized);
+        const showHidden = flags.has('a');
+        const longFormat = flags.has('l');
+        if (showHidden) {
+          entries = [
+            { name: '.', kind: 'dir' as const },
+            { name: '..', kind: 'dir' as const },
+            ...entries
+          ];
+        }
+        if (longFormat) {
+          // Long listing format
+          const totalBlocks = entries.length * 4;
+          const outputLines: TerminalLine[] = [
+            { id: `ls-total-${Date.now()}`, type: 'output', content: `total ${totalBlocks}`, timestamp: new Date(), animate: true }
+          ];
+          const now = new Date();
+          const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const dateStr = `${monthNames[now.getMonth()]} ${String(now.getDate()).padStart(2)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+          entries.forEach((entry, idx) => {
+            const isDir = entry.kind === 'dir';
+            const perms = isDir ? 'drwxr-xr-x' : '-rw-r--r--';
+            const links = isDir ? '2' : '1';
+            // Compute size for files from fileContents
+            let size = 4096;
+            if (!isDir) {
+              const filePath = normalized === '~' ? `~/${entry.name}` : `${normalized}/${entry.name}`;
+              const content = fileContents[filePath];
+              size = content ? content.length : 256;
+            }
+            const sizeStr = String(size).padStart(5);
+            const formatted = `${perms}  ${links} yyerf yyerf ${sizeStr} ${dateStr} ${entry.name}`;
+            outputLines.push({
+              id: `ls-l-${Date.now()}-${idx}`,
+              type: 'output',
+              content: `__ls_entry__:${formatted}|${entry.kind}`,
+              timestamp: new Date(),
+              animate: true
+            });
+          });
+          setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
+        } else {
+          // Grid listing
+          const encoded = entries.map(e => `${e.name}|${e.kind}`).join(' ');
+          const marker = '__ls__:' + encoded;
+          const outputLines: TerminalLine[] = entries.length ? [
+            { id: `ls-${Date.now()}`, type: 'output' as const, content: marker, timestamp: new Date(), animate: true }
+          ] : [];
+          setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
+        }
+      }
     } else if (trimmedInput === 'cat') {
       const targetArg = args.join(' ');
       if (!targetArg) {
@@ -337,15 +455,57 @@ const directorySet = new Set<string>([
             setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
           }
       }
+    } else if (trimmedInput === 'echo') {
+      const text = args.join(' ');
+      setLines(prev => [...prev, promptTop, promptBottom, { id: `echo-${Date.now()}`, type: 'output', content: text, timestamp: new Date(), animate: true }]);
+    } else if (trimmedInput === 'uname') {
+      const flagA = args.includes('-a');
+      const info = flagA
+        ? 'Linux portfolio 6.1.0-kali9-amd64 #1 SMP PREEMPT_DYNAMIC x86_64 GNU/Linux'
+        : 'Linux';
+      setLines(prev => [...prev, promptTop, promptBottom, { id: `uname-${Date.now()}`, type: 'output', content: info, timestamp: new Date(), animate: true }]);
+    } else if (['sudo', 'su'].includes(trimmedInput)) {
+      const msg = trimmedInput === 'sudo'
+        ? 'Nice try. yyerf is not in the sudoers file. This incident will be reported.'
+        : 'su: Authentication failure';
+      setLines(prev => [...prev, promptTop, promptBottom, { id: `sudo-${Date.now()}`, type: 'error', content: msg, timestamp: new Date(), animate: true }]);
+    } else if (['rm', 'rmdir', 'mkdir', 'touch', 'mv', 'cp', 'chmod', 'chown'].includes(trimmedInput)) {
+      const err = `${raw}: Permission denied (read-only filesystem)`;
+      setLines(prev => [...prev, promptTop, promptBottom, { id: `perm-${Date.now()}`, type: 'error', content: err, timestamp: new Date(), animate: true }]);
+    } else if (trimmedInput === 'grep') {
+      if (args.length === 0) {
+        setLines(prev => [...prev, promptTop, promptBottom, { id: `grep-${Date.now()}`, type: 'error', content: 'Usage: grep <pattern> <file>', timestamp: new Date(), animate: true }]);
+      } else {
+        const pattern = args[0];
+        const file = args[1];
+        if (!file) {
+          setLines(prev => [...prev, promptTop, promptBottom, { id: `grep-${Date.now()}`, type: 'error', content: 'Usage: grep <pattern> <file>', timestamp: new Date(), animate: true }]);
+        } else {
+          let candidate: string;
+          if (file.startsWith('~/')) candidate = file;
+          else if (currentPath === '~') candidate = `~/${file}`;
+          else candidate = `${currentPath}/${file}`;
+          const content = fileContents[normalizePath(candidate)];
+          if (!content) {
+            setLines(prev => [...prev, promptTop, promptBottom, { id: `grep-${Date.now()}`, type: 'error', content: `grep: ${file}: No such file`, timestamp: new Date(), animate: true }]);
+          } else {
+            const matchingLines = content.split('\n').filter(l => l.toLowerCase().includes(pattern.toLowerCase()));
+            if (matchingLines.length === 0) {
+              setLines(prev => [...prev, promptTop, promptBottom]);
+            } else {
+              const outputLines: TerminalLine[] = matchingLines.map((l, idx) => ({ id: `grep-${Date.now()}-${idx}`, type: 'output' as const, content: l, timestamp: new Date(), animate: true }));
+              setLines(prev => [...prev, promptTop, promptBottom, ...outputLines]);
+            }
+          }
+        }
+      }
     } else if (commands[trimmedInput]) {
       if (trimmedInput === 'clear') {
-        // Clear should not add historical prompt lines; just clear and exit
         commands[trimmedInput].execute();
         setCurrentInput('');
         return;
       }
-      // Block direct content commands (must use cat)
-  if (['about', 'experience', 'contact', 'skills', 'projects', 'certifications', 'password.txt'].includes(trimmedInput)) {
+      if (['about', 'experience', 'contact', 'skills', 'projects', 'certifications', 'password.txt'].includes(trimmedInput)) {
         const err = `${trimmedInput}: command not found`;
         setLines(prev => [...prev, promptTop, promptBottom, { id: `err-${Date.now()}`, type: 'error', content: err, timestamp: new Date(), animate: true }]);
         setCurrentInput('');
@@ -378,39 +538,31 @@ const directorySet = new Set<string>([
   justRanCommandRef.current = true;
   };
 
-  // Resolve next path for `cd`
+  // Resolve next path for `cd` — handles ~, ., .., multi-level .., and absolute ~/paths
   const resolvePath = (current: string, target: string): string => {
     const trimmed = (target || '').trim();
-    if (!trimmed) return current; // no change
+    if (!trimmed) return current;
     if (trimmed === '~') return '~';
-    if (trimmed === '.') return current; // stay put
-    const currentSegments = current === '~' ? [] : current.replace(/^~\//, '').split('/');
-    if (trimmed === '..') {
-      if (currentSegments.length === 0) return '~';
-      currentSegments.pop();
-      return currentSegments.length ? `~/${currentSegments.join('/')}` : '~';
+
+    // Build an array of path segments starting from ~
+    let segments: string[];
+    if (trimmed.startsWith('~/')) {
+      segments = trimmed.slice(2).split('/').filter(Boolean);
+    } else {
+      const currentSegments = current === '~' ? [] : current.replace(/^~\//, '').split('/');
+      segments = [...currentSegments, ...trimmed.split('/').filter(Boolean)];
     }
-    // Absolute path from home
-    const fromHome = trimmed.startsWith('~/') ? trimmed.slice(2) : trimmed;
-    const candidateAbs = trimmed.startsWith('~/') ? (fromHome ? `~/${fromHome}` : '~') : `~/${[...currentSegments, fromHome].join('/')}`;
-    // Restrict to allowed directories only
-    if (candidateAbs === '~') return '~';
-    const parts = candidateAbs.split('/');
-    const firstLevel = parts.slice(0, 2).join('/'); // '~/<first>'
-    // Allow direct cd into first-level known directories
-    if (directorySet.has(firstLevel)) {
-      if (parts[1] === 'certifications') {
-        // allow category depth 3
-        if (parts.length === 3) {
-          const subPath = parts.slice(0,3).join('/');
-            if (directorySet.has(subPath)) return subPath; // category
-            return firstLevel; // fallback
-        }
-      }
-      return firstLevel;
+
+    // Resolve . and ..
+    const resolved: string[] = [];
+    for (const seg of segments) {
+      if (seg === '.') continue;
+      if (seg === '..') { resolved.pop(); continue; }
+      resolved.push(seg);
     }
-    // If invalid, keep current
-    return current;
+
+    const candidate = resolved.length ? `~/${resolved.join('/')}` : '~';
+    return directorySet.has(candidate) ? candidate : current;
   };
 
   const normalizePath = (path: string): string => {
@@ -442,13 +594,137 @@ const directorySet = new Set<string>([
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      // Simple autocomplete
-      const matches = Object.keys(commands).filter(cmd => 
-        cmd.startsWith(currentInput.toLowerCase())
-      );
-      if (matches.length === 1) {
-        setCurrentInput(matches[0]);
+      handleTabCompletion();
+    } else if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault();
+      // Show ^C and cancel current input
+      if (currentInput) {
+        const promptTop: TerminalLine = {
+          id: `ctrlc-top-${Date.now()}`, type: 'command',
+          content: `┌──(yyerf㉿portfolio)-[${currentPath}]`, timestamp: new Date(), animate: false
+        };
+        const promptBottom: TerminalLine = {
+          id: `ctrlc-bottom-${Date.now()}`, type: 'command',
+          content: `└─$ ${currentInput}^C`, timestamp: new Date(), animate: false
+        };
+        setLines(prev => [...prev, promptTop, promptBottom]);
       }
+      setCurrentInput('');
+      setHistoryIndex(-1);
+    } else if (e.ctrlKey && e.key === 'l') {
+      e.preventDefault();
+      setLines([]);
+    } else if (e.ctrlKey && e.key === 'u') {
+      e.preventDefault();
+      setCurrentInput('');
+    }
+  };
+
+  // Comprehensive tab completion for commands & paths
+  const handleTabCompletion = () => {
+    const input = currentInput;
+    const trimmed = input.trimStart();
+    const spaceIndex = trimmed.indexOf(' ');
+
+    // All known command names
+    const allCmds = [...new Set([
+      ...Object.keys(commands), 'cd', 'cat', 'ls', 'pwd', 'echo',
+      'uname', 'grep', 'sudo', 'rm', 'mkdir', 'touch', 'mv', 'cp'
+    ])];
+
+    // Case 1: Completing a command name (no space yet)
+    if (spaceIndex === -1) {
+      const partial = trimmed.toLowerCase();
+      if (!partial) return;
+      const matches = allCmds.filter(c => c.startsWith(partial) && c !== partial);
+      if (matches.length === 1) {
+        setCurrentInput(matches[0] + ' ');
+      } else if (matches.length > 1) {
+        const common = commonPrefix(matches);
+        if (common.length > partial.length) {
+          setCurrentInput(common);
+        }
+        // Show possible completions
+        const line: TerminalLine = {
+          id: `tab-${Date.now()}`, type: 'output',
+          content: matches.join('  '), timestamp: new Date(), animate: false
+        };
+        setLines(prev => [...prev, line]);
+      }
+      return;
+    }
+
+    // Case 2: Completing a path argument
+    const cmd = trimmed.slice(0, spaceIndex).toLowerCase();
+    if (!['cd', 'cat', 'ls', 'grep'].includes(cmd)) return;
+
+    const afterCmd = trimmed.slice(spaceIndex + 1);
+    // For ls, separate flags from path
+    const tokens = afterCmd.split(/\s+/).filter(Boolean);
+    const flagTokens = tokens.filter(t => t.startsWith('-'));
+    const pathTokens = tokens.filter(t => !t.startsWith('-'));
+    const pathArg = pathTokens.join(' ') || '';
+    const flagPrefix = flagTokens.length ? flagTokens.join(' ') + ' ' : '';
+    const beforePath = cmd + ' ' + flagPrefix;
+
+    // Split pathArg into directory portion and name prefix
+    let resolvedDir: string;
+    let namePrefix: string;
+    let pathPrefix: string; // prepended to completed name in the final input
+
+    if (pathArg.includes('/')) {
+      const lastSlash = pathArg.lastIndexOf('/');
+      const dirPart = pathArg.slice(0, lastSlash);
+      namePrefix = pathArg.slice(lastSlash + 1);
+      pathPrefix = pathArg.slice(0, lastSlash + 1);
+
+      // Resolve the directory part
+      if (dirPart === '' || dirPart === '~') {
+        resolvedDir = '~';
+      } else if (dirPart.startsWith('~/')) {
+        resolvedDir = normalizePath(dirPart);
+      } else {
+        resolvedDir = normalizePath(
+          currentPath === '~' ? `~/${dirPart}` : `${currentPath}/${dirPart}`
+        );
+      }
+    } else {
+      resolvedDir = currentPath;
+      namePrefix = pathArg;
+      pathPrefix = '';
+    }
+
+    if (!directorySet.has(resolvedDir)) return;
+
+    const entries = listDirectory(resolvedDir);
+    // For cd, only directories; for cat/grep, both (but prefer files)
+    let candidates = entries;
+    if (cmd === 'cd') candidates = entries.filter(e => e.kind === 'dir');
+
+    const matches = candidates.filter(e =>
+      e.name.startsWith(namePrefix) && (namePrefix === '' ? true : e.name !== namePrefix)
+    );
+
+    if (matches.length === 1) {
+      const match = matches[0];
+      const suffix = match.kind === 'dir' ? '/' : ' ';
+      setCurrentInput(beforePath + pathPrefix + match.name + suffix);
+    } else if (matches.length > 1) {
+      const names = matches.map(m => m.name);
+      const common = commonPrefix(names);
+      if (common.length > namePrefix.length) {
+        setCurrentInput(beforePath + pathPrefix + common);
+      }
+      // Show possible completions
+      const displayLine: TerminalLine = {
+        id: `tab-${Date.now()}`, type: 'output',
+        content: names.map(n => {
+          const e = matches.find(m => m.name === n)!;
+          return e.kind === 'dir' ? n + '/' : n;
+        }).join('  '),
+        timestamp: new Date(), animate: false
+      };
+      setLines(prev => [...prev, displayLine]);
     }
   };
 
@@ -561,7 +837,24 @@ const directorySet = new Set<string>([
           const isTop = line.type === 'command' && line.content.startsWith('┌──(');
           const isBottom = line.type === 'command' && line.content.startsWith('└─$');
           const isLs = line.type === 'output' && line.content.startsWith('__ls__:');
+          const isLsEntry = line.type === 'output' && line.content.startsWith('__ls_entry__:');
           const isAvatar = line.type === 'output' && line.content === '__avatar__';
+          if (isLsEntry) {
+            const rest = line.content.slice('__ls_entry__:'.length);
+            const lastPipe = rest.lastIndexOf('|');
+            const formatted = rest.slice(0, lastPipe);
+            const kind = rest.slice(lastPipe + 1);
+            // Find the entry name (last whitespace-separated token in formatted)
+            const lastSpace = formatted.lastIndexOf(' ');
+            const beforeName = formatted.slice(0, lastSpace + 1);
+            const name = formatted.slice(lastSpace + 1);
+            return (
+              <div key={line.id} className={"terminal-line break-words " + (line.animate ? 'line-enter' : '')}>
+                <span className="terminal-output whitespace-pre">{beforeName}</span>
+                <span className={kind === 'dir' ? 'text-primary font-bold' : 'terminal-output'}>{name}</span>
+              </div>
+            );
+          }
           if (isAvatar) {
             return (
               <div key={line.id} className={"terminal-line mb-3 flex items-center gap-3 " + (line.animate ? 'line-enter' : '')}>
